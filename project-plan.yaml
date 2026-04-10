@@ -1,0 +1,61 @@
+project: lossless-player
+status: active
+defaults:
+  room_model: single-room-v1
+  dsd_strategy: server-convert-to-flac
+  local_db: postgresql
+phases:
+  - id: P1
+    name: Foundation
+    milestone: Upload and inspect local files
+    status: in_progress
+    tasks:
+      - id: P1-01
+        title: Bootstrap pnpm workspace, web app, api app, and shared contracts
+        priority: P0
+        status: in_progress
+        depends_on: []
+        acceptance:
+          - Web and API run locally
+          - Database migrations apply cleanly
+      - id: P1-02
+        title: Add session creation and guest join flow
+        priority: P0
+        status: in_progress
+        depends_on:
+          - P1-01
+      - id: P1-03
+        title: Implement upload, metadata probe, and local disk storage
+        priority: P0
+        status: in_progress
+        depends_on:
+          - P1-01
+  - id: P2
+    name: Shared Playback
+    milestone: Multi-user synced listening
+    status: in_progress
+    tasks:
+      - id: P2-01
+        title: Add queue management, playback controls, and authoritative transport state
+        priority: P0
+        status: in_progress
+        depends_on:
+          - P1-02
+          - P1-03
+      - id: P2-02
+        title: Build web playback service and session synchronization UI
+        priority: P0
+        status: in_progress
+        depends_on:
+          - P2-01
+  - id: P3
+    name: High Resolution And Hardening
+    milestone: Unsupported formats normalize to FLAC
+    status: todo
+    tasks:
+      - id: P3-01
+        title: Add media jobs, transcode pipeline, and Supabase migration scaffolding
+        priority: P1
+        status: todo
+        depends_on:
+          - P2-01

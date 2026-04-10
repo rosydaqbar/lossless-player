@@ -1,0 +1,300 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(14, 165, 233, 0.18), transparent 38%),
+    radial-gradient(circle at bottom right, rgba(244, 63, 94, 0.16), transparent 28%),
+    #09090b;
+  color: #f4f4f5;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+@keyframes signalSweep {
+  0% {
+    transform: translateX(-60%);
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 0.12;
+  }
+
+  50% {
+    transform: translateX(20%);
+    opacity: 0.18;
+  }
+
+  100% {
+    transform: translateX(80%);
+    opacity: 0;
+  }
+}
+
+@keyframes signalPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.18);
+  }
+
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 14px rgba(125, 211, 252, 0);
+  }
+}
+
+@keyframes signalBreathe {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      inset 0 0 0 1px rgba(125, 211, 252, 0.16),
+      0 16px 40px rgba(14, 165, 233, 0.08);
+  }
+
+  50% {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 0 0 1px rgba(125, 211, 252, 0.24),
+      0 20px 48px rgba(14, 165, 233, 0.14);
+  }
+}
+
+.device-signal {
+  position: relative;
+  overflow: hidden;
+}
+
+.device-signal::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.06) 40%, transparent 70%);
+  animation: signalSweep 5.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.signal-orb {
+  animation: signalPulse 1.9s ease-in-out infinite;
+}
+
+.signal-button-breathe {
+  animation: signalBreathe 2.8s ease-in-out infinite;
+}
+
+@keyframes audioBannerActive {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(110, 231, 183, 0.12),
+      0 12px 32px rgba(16, 185, 129, 0.08);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(110, 231, 183, 0.24),
+      0 18px 42px rgba(16, 185, 129, 0.16);
+  }
+}
+
+@keyframes audioBannerInactive {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+      0 10px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 14px 32px rgba(15, 23, 42, 0.18);
+  }
+}
+
+.audio-banner {
+  position: relative;
+  overflow: hidden;
+}
+
+.audio-banner::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.06) 40%, transparent 72%);
+  animation: signalSweep 5.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.audio-banner-active {
+  animation: audioBannerActive 2.8s ease-in-out infinite;
+}
+
+.audio-banner-inactive {
+  animation: audioBannerInactive 3.2s ease-in-out infinite;
+}
+
+@keyframes playerDockExpandedEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(22px) scale(0.94);
+  }
+
+  58% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.015);
+  }
+
+  78% {
+    transform: translateY(2px) scale(0.995);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes playerDockMinimizedEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.92);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+  }
+
+  82% {
+    transform: translateY(1px) scale(0.997);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.player-dock-expanded-enter {
+  animation: playerDockExpandedEnter 0.44s cubic-bezier(0.2, 0.9, 0.2, 1.08);
+  transform-origin: bottom center;
+  will-change: transform, opacity;
+}
+
+.player-dock-minimized-enter {
+  animation: playerDockMinimizedEnter 0.38s cubic-bezier(0.2, 0.9, 0.2, 1.08);
+  transform-origin: bottom center;
+  will-change: transform, opacity;
+}
+
+@keyframes uploadModalOverlayIn {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes uploadModalOverlayOut {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes uploadModalContentIn {
+  0% {
+    opacity: 0;
+    transform: translateY(28px) scale(0.92);
+  }
+
+  58% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1.02);
+  }
+
+  82% {
+    transform: translateY(3px) scale(0.995);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes uploadModalContentOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+}
+
+.upload-modal-overlay[data-state="open"] {
+  animation: uploadModalOverlayIn 0.24s ease-out;
+}
+
+.upload-modal-overlay[data-state="closed"] {
+  animation: uploadModalOverlayOut 0.2s ease-in forwards;
+}
+
+.upload-modal-content[data-state="open"] {
+  animation: uploadModalContentIn 0.42s cubic-bezier(0.2, 0.9, 0.2, 1.08);
+  will-change: transform, opacity;
+}
+
+.upload-modal-content[data-state="closed"] {
+  animation: uploadModalContentOut 0.22s ease-in forwards;
+  will-change: transform, opacity;
+}
