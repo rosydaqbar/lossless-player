@@ -160,15 +160,18 @@ export class AdminService {
   }
 
   private async cleanupTrackFiles(trackId: string) {
-    await Promise.all([
-      rm(join(env.storageRoot, "originals", trackId), { recursive: true, force: true }),
-      rm(join(env.storageRoot, "normalized", trackId), { recursive: true, force: true }),
-      rm(join(env.storageRoot, "streaming", trackId), { recursive: true, force: true })
-    ]);
+    await Promise.all(
+      env.storageRoots.flatMap((storageRoot) => [
+        rm(join(storageRoot, "originals", trackId), { recursive: true, force: true }),
+        rm(join(storageRoot, "normalized", trackId), { recursive: true, force: true }),
+        rm(join(storageRoot, "streaming", trackId), { recursive: true, force: true })
+      ])
+    );
   }
 
-  private async cleanupMediaStorage() {
-    const entries = await readdir(env.storageRoot, { withFileTypes: true }).catch(() => []);
+  private async cleanupStorageRoot(storageRoot: string) {
+    await mkdir(storageRoot, { recursive: true });
+    const entries = await readdir(storageRoot, { withFileTypes: true }).catch(() => []);
     const protectedEntryName = basename(env.pgliteDataDir);
 
     await Promise.all(
@@ -177,7 +180,7 @@ export class AdminService {
           return;
         }
 
-        await rm(join(env.storageRoot, entry.name), {
+        await rm(join(storageRoot, entry.name), {
           recursive: true,
           force: true
         });
@@ -185,10 +188,16 @@ export class AdminService {
     );
 
     await Promise.all([
-      mkdir(join(env.storageRoot, "originals"), { recursive: true }),
-      mkdir(join(env.storageRoot, "normalized"), { recursive: true }),
-      mkdir(join(env.storageRoot, "streaming"), { recursive: true })
+      mkdir(join(storageRoot, "originals"), { recursive: true }),
+      mkdir(join(storageRoot, "normalized"), { recursive: true }),
+      mkdir(join(storageRoot, "streaming"), { recursive: true })
     ]);
+  }
+
+  private async cleanupMediaStorage() {
+    for (const storageRoot of env.storageRoots) {
+      await this.cleanupStorageRoot(storageRoot);
+    }
   }
 
   async deleteTrack(trackId: string, options: DeleteTrackOptions = {}) {
@@ -296,9 +305,7 @@ export class AdminService {
     };
   }
 
-  async wipeAll() {
-    const sessionRows = await this.database.select().from(sessions);
-
+  private async wipeAllData() {
     await this.database.transaction(async (tx: any) => {
       await tx.delete(accessTokens);
       await tx.delete(queueItems);
@@ -312,7 +319,13 @@ export class AdminService {
       await tx.delete(users);
     });
 
+    this.adminTokens.clear();
     await this.cleanupMediaStorage();
+  }
+
+  async wipeAll() {
+    const sessionRows = await this.database.select().from(sessions);
+    await this.wipeAllData();
 
     return {
       deletedSessionIds: sessionRows.map((session: any) => session.id)

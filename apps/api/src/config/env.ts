@@ -1,11 +1,19 @@
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { z } from "zod";
 import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 
-config({ path: resolve(process.cwd(), "../../.env"), override: false });
-config({ path: resolve(process.cwd(), ".env"), override: true });
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+let apiRoot = resolve(moduleDir, "..", "..");
+if (["src", "dist"].includes(basename(apiRoot))) {
+  apiRoot = resolve(apiRoot, "..");
+}
+const workspaceRoot = resolve(apiRoot, "..", "..");
+
+config({ path: resolve(workspaceRoot, ".env"), override: false });
+config({ path: resolve(apiRoot, ".env"), override: true });
 
 const envSchema = z.object({
   DATABASE_DRIVER: z.enum(["postgres", "pglite"]).default("pglite"),
@@ -33,11 +41,18 @@ const envSchema = z.object({
 });
 
 const parsed = envSchema.parse(process.env);
+const storageRoot = resolve(apiRoot, parsed.STORAGE_ROOT);
+const legacyStorageRoot = resolve(process.cwd(), parsed.STORAGE_ROOT);
+const workspaceRelativeStorageRoot = resolve(workspaceRoot, parsed.STORAGE_ROOT);
+const storageRoots = Array.from(new Set([storageRoot, legacyStorageRoot, workspaceRelativeStorageRoot]));
 
 export const env = {
   ...parsed,
-  storageRoot: resolve(process.cwd(), parsed.STORAGE_ROOT),
+  apiRoot,
+  workspaceRoot,
+  storageRoot,
+  storageRoots,
   pgliteDataDir: parsed.PGLITE_DATA_DIR.startsWith("memory://")
     ? parsed.PGLITE_DATA_DIR
-    : resolve(process.cwd(), parsed.PGLITE_DATA_DIR)
+    : resolve(apiRoot, parsed.PGLITE_DATA_DIR)
 };
