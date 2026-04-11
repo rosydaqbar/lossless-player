@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
@@ -33,6 +34,58 @@ type Database = AppDatabase;
 
 function makeCode(prefix: string) {
   return `${prefix}-${randomBytes(3).toString("hex")}`;
+}
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+async function computeMediaJobProgress(job: { status: string; jobType: string; payload: unknown } | undefined) {
+  if (!job) {
+    return null;
+  }
+
+  if (job.status === "complete") {
+    return 100;
+  }
+
+  if (job.status === "failed") {
+    return 0;
+  }
+
+  if (job.jobType !== "package_for_segmented_playback") {
+    return null;
+  }
+
+  const payload = (job.payload ?? {}) as Record<string, unknown>;
+  const payloadProgressPercent = typeof payload.progressPercent === "number"
+    ? clampProgress(Math.round(payload.progressPercent))
+    : null;
+  if (payloadProgressPercent !== null) {
+    return payloadProgressPercent;
+  }
+
+  const outputDir = typeof payload.outputDir === "string" ? payload.outputDir : "";
+  const durationMs = typeof payload.durationMs === "number" ? payload.durationMs : 0;
+  const segmentDurationSeconds =
+    typeof payload.segmentDurationSeconds === "number" ? payload.segmentDurationSeconds : 0;
+
+  let completedSegments = 0;
+  if (outputDir) {
+    try {
+      const entries = await readdir(outputDir);
+      completedSegments = entries.filter((name) => /^seg-\d{5}\.(flac|m4s)$/i.test(name)).length;
+    } catch {
+      completedSegments = 0;
+    }
+  }
+
+  if (durationMs > 0 && segmentDurationSeconds > 0) {
+    const expectedSegments = Math.max(1, Math.ceil(durationMs / (segmentDurationSeconds * 1000)));
+    return clampProgress(Math.min(99, Math.round((completedSegments / expectedSegments) * 100)));
+  }
+
+  return null;
 }
 
 export class SessionService {
@@ -362,10 +415,29 @@ export class SessionService {
 
     const pendingByTrack = new Map<string, (typeof pendingJobs)[number]>();
     for (const job of pendingJobs) {
-      if (!pendingByTrack.has(job.trackId) && job.status !== "complete") {
+      if (job.status === "complete") {
+        continue;
+      }
+
+      const existing = pendingByTrack.get(job.trackId);
+      if (!existing) {
+        pendingByTrack.set(job.trackId, job);
+        continue;
+      }
+
+      if (existing.jobType !== "package_for_segmented_playback" && job.jobType === "package_for_segmented_playback") {
         pendingByTrack.set(job.trackId, job);
       }
     }
+
+    const pendingProgressByTrack = new Map<string, number | null>(
+      await Promise.all(
+        Array.from(pendingByTrack.entries()).map(async ([trackId, job]) => [
+          trackId,
+          await computeMediaJobProgress(job)
+        ] as const)
+      )
+    );
 
     const trackById = new Map(
       trackRows.map((track: any) => [
@@ -398,6 +470,7 @@ export class SessionService {
           pendingJobStatus:
             (pendingByTrack.get(track.id)?.status as "pending" | "processing" | "complete" | "failed" | null | undefined) ??
             null,
+          pendingJobProgress: pendingProgressByTrack.get(track.id) ?? (playbackReady ? 100 : null),
           assets: trackAssetsForTrack.map((asset: any) => ({
             assetId: asset.id,
             kind: asset.kind as "original" | "normalized_playback" | "streaming_playback" | "artwork",

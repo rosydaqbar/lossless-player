@@ -392,6 +392,74 @@ export class MediaService {
     });
   }
 
+  private async spawnFfmpegWithProgress(
+    args: string[],
+    options: { cwd?: string; onProgressMs?: (encodedMs: number) => void } = {}
+  ) {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      let stderr = "";
+      let stdoutBuffer = "";
+      const child = spawn(env.FFMPEG_PATH, ["-progress", "pipe:1", "-nostats", ...args], {
+        cwd: options.cwd,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+
+      child.stdout?.setEncoding("utf8");
+      child.stdout?.on("data", (chunk) => {
+        stdoutBuffer += chunk;
+        const lines = stdoutBuffer.split(/\r?\n/);
+        stdoutBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line) {
+            continue;
+          }
+          const separatorIndex = line.indexOf("=");
+          if (separatorIndex <= 0) {
+            continue;
+          }
+
+          const key = line.slice(0, separatorIndex);
+          const value = line.slice(separatorIndex + 1).trim();
+
+          if (key === "out_time_ms" || key === "out_time_us") {
+            const raw = Number(value);
+            if (Number.isFinite(raw) && raw >= 0) {
+              options.onProgressMs?.(Math.round(raw / 1000));
+            }
+          }
+        }
+      });
+
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (chunk) => {
+        stderr += chunk;
+      });
+
+      child.on("error", rejectPromise);
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolvePromise();
+          return;
+        }
+        rejectPromise(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+      });
+    });
+  }
+
+  private async updateJobProgressPayload(jobId: string, payload: Record<string, unknown>, progressPercent: number) {
+    await this.database
+      .update(mediaJobs)
+      .set({
+        payload: {
+          ...payload,
+          progressPercent
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(mediaJobs.id, jobId));
+  }
+
   private async queueNormalizeTx(
     tx: any,
     input: {
@@ -852,7 +920,19 @@ export class MediaService {
   }
 
   async completeJob(jobId: string, assetId: string) {
-    await this.database.update(mediaJobs).set({ status: "complete", updatedAt: new Date() }).where(eq(mediaJobs.id, jobId));
+    const [job] = await this.database.select().from(mediaJobs).where(eq(mediaJobs.id, jobId));
+    const payload = (job?.payload ?? {}) as Record<string, unknown>;
+    await this.database
+      .update(mediaJobs)
+      .set({
+        status: "complete",
+        payload: {
+          ...payload,
+          progressPercent: 100
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(mediaJobs.id, jobId));
     await this.database.update(trackAssets).set({ status: "complete", updatedAt: new Date() }).where(eq(trackAssets.id, assetId));
   }
 
@@ -977,9 +1057,41 @@ export class MediaService {
       segmentPattern
     );
 
-    await this.spawnFfmpeg(args, {
-      cwd: payload.outputDir
+    const payloadRecord = payload as Record<string, unknown>;
+    const durationForProgress = typeof payload.durationMs === "number" && payload.durationMs > 0 ? payload.durationMs : null;
+    let lastPersistedProgress = -1;
+    let lastPersistedAt = 0;
+    let progressWriteQueue = Promise.resolve();
+
+    const persistProgress = (nextProgress: number) => {
+      const now = Date.now();
+      if (nextProgress <= lastPersistedProgress) {
+        return;
+      }
+      if (lastPersistedProgress >= 0 && now - lastPersistedAt < 500 && nextProgress - lastPersistedProgress < 2) {
+        return;
+      }
+
+      lastPersistedProgress = nextProgress;
+      lastPersistedAt = now;
+      progressWriteQueue = progressWriteQueue
+        .then(() => this.updateJobProgressPayload(job.id, payloadRecord, nextProgress))
+        .catch(() => undefined);
+    };
+
+    persistProgress(0);
+    await this.spawnFfmpegWithProgress(args, {
+      cwd: payload.outputDir,
+      onProgressMs: (encodedMs) => {
+        if (!durationForProgress) {
+          return;
+        }
+        const nextProgress = Math.max(0, Math.min(99, Math.round((encodedMs / durationForProgress) * 100)));
+        persistProgress(nextProgress);
+      }
     });
+    persistProgress(99);
+    await progressWriteQueue;
 
     const entries = await readdir(payload.outputDir);
     const segmentNames = entries

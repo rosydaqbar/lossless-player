@@ -46,10 +46,18 @@ async function botControlRequest(path: string, options: RequestInit = {}) {
     ...(env.BOT_CONTROL_TOKEN ? { "x-bot-control-token": env.BOT_CONTROL_TOKEN } : {})
   };
 
-  const response = await fetch(`${base}${path}`, {
-    ...options,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      ...options,
+      headers
+    });
+  } catch {
+    const error = new Error("Bot control service is unavailable");
+    // @ts-expect-error custom status code
+    error.statusCode = 503;
+    throw error;
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -261,7 +269,13 @@ export async function registerRoutes(
     const params = request.params as { id: string };
     await requireAccess(request, services.authService, params.id);
 
-    const payload = await botControlRequest("/bots", { method: "GET" });
+    let payload: any;
+    try {
+      payload = await botControlRequest("/bots", { method: "GET" });
+    } catch (error) {
+      request.log.warn({ err: error }, "Bot control unavailable while listing bots");
+      return { bots: [] };
+    }
     const bots = Array.isArray(payload?.bots) ? payload.bots : [];
 
     return {

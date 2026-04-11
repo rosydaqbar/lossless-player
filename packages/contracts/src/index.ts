@@ -136,6 +136,7 @@ export const trackSchema = z.object({
   channels: z.number().nullable(),
   playbackReady: z.boolean(),
   pendingJobStatus: mediaJobStatusSchema.nullable(),
+  pendingJobProgress: z.number().min(0).max(100).nullable(),
   assets: z.array(assetSchema)
 });
 

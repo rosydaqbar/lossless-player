@@ -247,6 +247,23 @@ function formatQueueMeta(track) {
   return [track.artist, track.album].filter(Boolean).join(" - ") || "Unknown metadata";
 }
 
+function getTrackStreamProgress(track) {
+  const backendProgress = track?.pendingJobProgress;
+  if (typeof backendProgress === "number" && Number.isFinite(backendProgress)) {
+    return clamp(Math.round(backendProgress), 0, 100);
+  }
+
+  if (track?.pendingJobStatus === "failed") {
+    return 0;
+  }
+
+  if (track?.playbackReady) {
+    return 100;
+  }
+
+  return null;
+}
+
 function toAbsoluteApiUrl(path) {
   if (!path) {
     return path;
@@ -1258,6 +1275,20 @@ export function SessionRoom() {
                   <ScrollArea className="h-[28rem]">
                     <div className="space-y-2 px-0.5">
                         {state.queue.map((item) => (
+                          (() => {
+                            const streamProgress = getTrackStreamProgress(item.track);
+                            const hasChunkingStatus =
+                              item.track.pendingJobStatus === "pending" || item.track.pendingJobStatus === "processing";
+                            const hasNumericProgress = typeof streamProgress === "number" && Number.isFinite(streamProgress);
+                            const showStreamProgress =
+                              hasChunkingStatus &&
+                              hasNumericProgress &&
+                              streamProgress < 100;
+                            const streamProgressWidth = showStreamProgress
+                              ? `${Math.max(1, Math.round(streamProgress))}%`
+                              : "0%";
+
+                            return (
                           <Card
                             key={item.queueItemId}
                             onClick={canManagePlayback ? () => handleQueueSelect(item.queueItemId) : undefined}
@@ -1273,13 +1304,26 @@ export function SessionRoom() {
                             }
                             role={canManagePlayback ? "button" : undefined}
                             tabIndex={canManagePlayback ? 0 : undefined}
-                            className={`card-pop-in group border border-border/70 ring-0 ${
+                            className={`card-pop-in group relative overflow-hidden border border-border/70 ring-0 ${
                               canManagePlayback
                                 ? "cursor-pointer transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                                 : "cursor-default"
                             } py-0 gap-0 data-[selected=true]:border-primary/50 data-[selected=true]:bg-accent`}
                             data-selected={item.isSelected ? "true" : "false"}
                           >
+                            {hasChunkingStatus ? (
+                              <div
+                                className="pointer-events-none absolute inset-y-0 left-0 right-0 bg-primary/8"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            {showStreamProgress ? (
+                              <div
+                                className="pointer-events-none absolute inset-y-0 left-0 bg-primary/25 transition-[width] duration-300"
+                                style={{ width: streamProgressWidth }}
+                                aria-hidden="true"
+                              />
+                            ) : null}
                             <CardContent className="flex items-center gap-3 p-3 sm:p-3.5">
                               <Button
                                 aria-label={`Play ${item.track.displayTitle}`}
@@ -1307,13 +1351,11 @@ export function SessionRoom() {
                                 {formatQueueMeta(item.track)}
                                 {item.track.durationMs ? ` - ${formatDuration(item.track.durationMs)}` : ""}
                               </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {item.track.playbackReady
-                                  ? "Ready to play"
-                                  : item.track.pendingJobStatus
-                                    ? `Preparing: ${item.track.pendingJobStatus}`
-                                    : "Waiting for asset"}
-                              </p>
+                              {item.track.pendingJobStatus === "failed" ? (
+                                <p className="mt-1 text-xs text-muted-foreground">Playback prep failed</p>
+                              ) : hasChunkingStatus ? (
+                                <p className="mt-1 text-xs text-muted-foreground">Preparing stream</p>
+                              ) : null}
                             </div>
 
                             <Button
@@ -1330,6 +1372,8 @@ export function SessionRoom() {
                             </Button>
                             </CardContent>
                           </Card>
+                            );
+                          })()
                         ))}
                       </div>
                   </ScrollArea>
