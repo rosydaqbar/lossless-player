@@ -84,14 +84,16 @@ export class SessionService {
       trackCountBySession.set(row.sessionId, (trackCountBySession.get(row.sessionId) ?? 0) + 1);
     }
 
-    return sessionRows.map((session: any) => ({
-      sessionId: session.id,
-      sessionName: session.name,
-      ownerDisplayName: ownerBySession.get(session.id) ?? "Unknown owner",
-      memberCount: memberCountBySession.get(session.id) ?? 0,
-      trackCount: trackCountBySession.get(session.id) ?? 0,
-      createdAt: session.createdAt.toISOString()
-    }));
+    return sessionRows
+      .filter((session: any) => ownerBySession.has(session.id))
+      .map((session: any) => ({
+        sessionId: session.id,
+        sessionName: session.name,
+        ownerDisplayName: ownerBySession.get(session.id) ?? "Unknown owner",
+        memberCount: memberCountBySession.get(session.id) ?? 0,
+        trackCount: trackCountBySession.get(session.id) ?? 0,
+        createdAt: session.createdAt.toISOString()
+      }));
   }
 
   async createSession(input: CreateSessionInput) {
@@ -218,8 +220,8 @@ export class SessionService {
   }
 
   async mutateQueue(sessionId: string, actor: SessionAccessContext, input: QueueMutationInput) {
-    if (!(actor.role === "owner" || actor.role === "controller")) {
-      throw new Error("Queue control requires controller access");
+    if (!(actor.role === "owner" || actor.role === "controller" || actor.role === "listener")) {
+      throw new Error("Queue control requires session access");
     }
 
     if (input.type === "remove") {

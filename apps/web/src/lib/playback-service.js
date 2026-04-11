@@ -2,6 +2,49 @@ const SILENT_WAV_DATA_URI =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 const TRANSPORT_SYNC_PLAYING_DRIFT_TOLERANCE_MS = 350;
 const TRANSPORT_SYNC_PAUSED_DRIFT_TOLERANCE_MS = 120;
+const AUDIO_PREFS_STORAGE_KEY = "lossless-player-audio-prefs";
+
+function readPersistedAudioPrefs() {
+  if (typeof window === "undefined") {
+    return { volume: 0.15, muted: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AUDIO_PREFS_STORAGE_KEY);
+    if (!raw) {
+      return { volume: 0.15, muted: false };
+    }
+
+    const parsed = JSON.parse(raw);
+    const volume = Number(parsed?.volume);
+    const muted = Boolean(parsed?.muted);
+
+    return {
+      volume: Number.isFinite(volume) ? clamp(volume, 0, 1) : 0.15,
+      muted
+    };
+  } catch {
+    return { volume: 0.15, muted: false };
+  }
+}
+
+function persistAudioPrefs(volume, muted) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      AUDIO_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        volume: clamp(Number(volume), 0, 1),
+        muted: Boolean(muted)
+      })
+    );
+  } catch {
+    // ignore storage failures
+  }
+}
 
 function waitForEvent(target, eventName) {
   return new Promise((resolve) => {
@@ -183,6 +226,7 @@ function findSegmentIndex(manifest, positionMs) {
 
 export class PlaybackService {
   constructor() {
+    const persistedPrefs = readPersistedAudioPrefs();
     this.audio = null;
     this.audioMount = null;
     this.audioToken = 0;
@@ -203,8 +247,8 @@ export class PlaybackService {
     this.currentTimeMs = 0;
     this.durationMs = 0;
     this.paused = true;
-    this.volume = 0.15;
-    this.muted = false;
+    this.volume = persistedPrefs.volume;
+    this.muted = persistedPrefs.muted;
     this.capabilityAudio = typeof Audio !== "undefined" ? new Audio() : null;
     this.chunkFetchControllers = new Map();
     this.chunkBufferPromises = new Map();
@@ -523,12 +567,27 @@ export class PlaybackService {
     unlockSource.stop(audioContext.currentTime + 0.001);
     unlockSource.disconnect();
 
-    const audio = new Audio(SILENT_WAV_DATA_URI);
-    audio.volume = 0;
-    await audio.play();
-    audio.pause();
-    audio.removeAttribute("src");
-    audio.load();
+    if (this.audio) {
+      const previousMuted = this.audio.muted;
+      const previousVolume = this.audio.volume;
+      this.audio.muted = true;
+      this.audio.volume = 0;
+      try {
+        await this.audio.play();
+        this.audio.pause();
+      } finally {
+        this.audio.muted = previousMuted;
+        this.audio.volume = previousVolume;
+        this.applyAudioVolume();
+      }
+    } else {
+      const audio = new Audio(SILENT_WAV_DATA_URI);
+      audio.volume = 0;
+      await audio.play();
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
 
     this.unlocked = true;
     this.lastError = null;
@@ -1015,7 +1074,39 @@ export class PlaybackService {
     const safeDurationSeconds = this.durationMs > 0 ? this.durationMs / 1000 : Number.MAX_SAFE_INTEGER;
     this.audio.currentTime = clamp(clampedPositionMs / 1000, 0, safeDurationSeconds);
     this.currentTimeMs = clampedPositionMs;
-    await this.audio.play();
+    try {
+      await this.audio.play();
+    } catch (error) {
+      const previousMuted = this.audio.muted;
+      const previousVolume = this.audio.volume;
+      this.audio.muted = true;
+      this.audio.volume = 0;
+      let startedMuted = false;
+      try {
+        await this.audio.play();
+        startedMuted = true;
+      } finally {
+        if (startedMuted) {
+          window.setTimeout(() => {
+            if (!this.audio) {
+              return;
+            }
+
+            this.audio.muted = previousMuted;
+            this.audio.volume = previousVolume;
+            this.applyAudioVolume();
+          }, 220);
+        } else {
+          this.audio.muted = previousMuted;
+          this.audio.volume = previousVolume;
+          this.applyAudioVolume();
+        }
+      }
+
+      if (this.audio.paused) {
+        throw error;
+      }
+    }
     this.paused = false;
     this.startProgressLoop();
     this.emit();
@@ -1079,12 +1170,14 @@ export class PlaybackService {
     if (this.volume > 0 && this.muted) {
       this.muted = false;
     }
+    persistAudioPrefs(this.volume, this.muted);
     this.applyAudioVolume();
     this.emit();
   }
 
   toggleMute() {
     this.muted = !this.muted;
+    persistAudioPrefs(this.volume, this.muted);
     this.applyAudioVolume();
     this.emit();
     return this.muted;

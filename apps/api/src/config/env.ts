@@ -37,7 +37,10 @@ const envSchema = z.object({
   ENABLE_MEDIA_JOBS: z
     .string()
     .default("false")
-    .transform((value) => value === "true")
+    .transform((value) => value === "true"),
+  BOT_CONTROL_BYPASS_TOKEN: z.string().default(""),
+  BOT_CONTROL_URL: z.string().default("http://localhost:4100/internal"),
+  BOT_CONTROL_TOKEN: z.string().default("")
 });
 
 const parsed = envSchema.parse(process.env);

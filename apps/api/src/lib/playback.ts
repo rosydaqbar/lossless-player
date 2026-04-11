@@ -12,7 +12,7 @@ export function computeCurrentPositionMs(
 }
 
 export function canManagePlayback(role: string) {
-  return role === "owner" || role === "controller";
+  return role === "owner" || role === "controller" || role === "listener";
 }
 
 export function isMp3Like(input: {

@@ -6,6 +6,7 @@ Greenfield `pnpm` workspace for a synchronized, browser-based lossless listening
 
 - `apps/web`: React + Vite + JavaScript/JSX + Radix UI + Tailwind CSS
 - `apps/api`: Fastify + Socket.IO + Drizzle + PostgreSQL integration
+- `apps/music-bot`: Discord.js bot for now-playing updates and controls
 - `packages/contracts`: shared Zod schemas and transport contracts
 
 ## Local setup

@@ -16,10 +16,10 @@ describe("playback helpers", () => {
     ).toBe(2500);
   });
 
-  it("allows only owners and controllers to manage playback", () => {
+  it("allows all session members to manage playback", () => {
     expect(canManagePlayback("owner")).toBe(true);
     expect(canManagePlayback("controller")).toBe(true);
-    expect(canManagePlayback("listener")).toBe(false);
+    expect(canManagePlayback("listener")).toBe(true);
   });
 
   it("prefers direct FLAC when client supports it", () => {

@@ -1,17 +1,17 @@
-import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSession, fetchAvailableSessions, joinSession } from "../lib/api.js";
 import { useSessionStore } from "../store/session-store.js";
 
-function FormField({ label, ...props }) {
+function Field({ label, ...props }) {
   return (
-    <label className="flex flex-col gap-2 text-sm text-zinc-200">
+    <label className="grid gap-2 text-sm">
       <span>{label}</span>
-      <input
-        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-sky-400"
-        {...props}
-      />
+      <Input {...props} />
     </label>
   );
 }
@@ -29,23 +29,52 @@ export function AuthPanel() {
     accessCode: ""
   });
   const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [activeTab, setActiveTab] = useState("create");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const sessionFromQuery = searchParams.get("sessionId") ?? "";
+    const accessCodeFromQuery = searchParams.get("accessCode") ?? "";
+    const displayNameFromQuery = searchParams.get("displayName") ?? "";
+    const shouldOpenJoin = Boolean(sessionFromQuery || accessCodeFromQuery || searchParams.get("upload") === "1");
+
+    if (sessionFromQuery) {
+      setSelectedSessionId(sessionFromQuery);
+    }
+
+    if (displayNameFromQuery) {
+      setJoinForm((current) => ({ ...current, displayName: displayNameFromQuery }));
+      setCreateForm((current) => ({ ...current, displayName: displayNameFromQuery }));
+    }
+
+    if (accessCodeFromQuery) {
+      setJoinForm((current) => ({ ...current, accessCode: accessCodeFromQuery }));
+    }
+
+    if (shouldOpenJoin) {
+      setActiveTab("join");
+    }
+  }, []);
 
   const sessionsQuery = useQuery({
     queryKey: ["available-sessions"],
     queryFn: fetchAvailableSessions,
-    refetchInterval: 5000
+    refetchInterval: 5000,
+    refetchOnMount: "always",
+    staleTime: 0
   });
 
   useEffect(() => {
     if (!sessionsQuery.data?.length) {
-      if (selectedSessionId) {
-        setSelectedSessionId("");
-      }
+      if (selectedSessionId) setSelectedSessionId("");
       return;
     }
-
-    const sessionStillExists = sessionsQuery.data.some((session) => session.sessionId === selectedSessionId);
-    if (!selectedSessionId || !sessionStillExists) {
+    const stillExists = sessionsQuery.data.some((session) => session.sessionId === selectedSessionId);
+    if (!selectedSessionId || !stillExists) {
       setSelectedSessionId(sessionsQuery.data[0].sessionId);
     }
   }, [selectedSessionId, sessionsQuery.data]);
@@ -75,142 +104,80 @@ export function AuthPanel() {
   });
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-12">
-      <div className="grid w-full gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-6">
-          <div className="inline-flex rounded-full border border-sky-400/20 bg-sky-400/10 px-4 py-1 text-xs uppercase tracking-[0.3em] text-sky-200">
-            Shared Lossless Playback
-          </div>
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
+      <Card className="card-transition-in w-full max-w-xl">
+        <CardHeader>
+          <CardTitle>Lossless Listening Room</CardTitle>
+          <CardDescription>Create a room or join an existing one.</CardDescription>
           {notice ? (
-            <div className="max-w-2xl rounded-[1.5rem] border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
-              <div className="font-medium">Playback error</div>
-              <div className="mt-2">{notice}</div>
-              <button
-                className="mt-3 rounded-xl border border-rose-300/20 px-3 py-2 text-xs text-rose-50 hover:bg-white/5"
-                onClick={() => setNotice("")}
-              >
-                Dismiss
-              </button>
+            <div className="text-sm text-destructive">
+              {notice}{" "}
+              <button className="underline" onClick={() => setNotice("")}>dismiss</button>
             </div>
           ) : null}
-          <div className="space-y-4">
-            <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-white sm:text-6xl">
-              Listen together with one queue, one transport, and room-level controller access.
-            </h1>
-            <p className="max-w-2xl text-lg leading-8 text-zinc-300">
-              Upload local files, share a room ID with friends, and keep everyone synced to the same
-              playback state. MP3 and FLAC are ready first, with server-side normalization prepared
-              for ALAC, DSD, and other high-resolution formats.
-            </p>
-          </div>
-        </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="grid gap-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="create">Create room</TabsTrigger>
+              <TabsTrigger value="join">Join room</TabsTrigger>
+            </TabsList>
 
-        <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6 shadow-2xl shadow-black/40 backdrop-blur">
-          <Tabs.Root defaultValue="create" className="space-y-6">
-            <Tabs.List className="grid grid-cols-2 rounded-2xl border border-white/10 bg-white/5 p-1">
-              <Tabs.Trigger
-                value="create"
-                className="rounded-xl px-4 py-3 text-sm text-zinc-300 data-[state=active]:bg-white data-[state=active]:text-zinc-950"
-              >
-                Create room
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                value="join"
-                className="rounded-xl px-4 py-3 text-sm text-zinc-300 data-[state=active]:bg-white data-[state=active]:text-zinc-950"
-              >
-                Join room
-              </Tabs.Trigger>
-            </Tabs.List>
-
-            <Tabs.Content value="create" className="space-y-4">
-              <FormField
+            <TabsContent value="create" className="grid gap-4 data-[state=active]:card-transition-in">
+              <Field
                 label="Your display name"
                 value={createForm.displayName}
                 placeholder="Hameng"
                 onChange={(event) => setCreateForm((current) => ({ ...current, displayName: event.target.value }))}
               />
-              <FormField
+              <Field
                 label="Room name"
                 value={createForm.sessionName}
                 placeholder="Late Night Session"
                 onChange={(event) => setCreateForm((current) => ({ ...current, sessionName: event.target.value }))}
               />
-              <button
-                className="w-full rounded-2xl bg-sky-400 px-4 py-3 text-sm font-medium text-zinc-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-zinc-600"
+              <Button
+                className="w-full"
                 disabled={createMutation.isPending || !createForm.displayName.trim()}
                 onClick={() => createMutation.mutate(createForm)}
               >
                 {createMutation.isPending ? "Creating room..." : "Create shared room"}
-              </button>
-              {createMutation.error ? (
-                <p className="text-sm text-rose-300">{createMutation.error.message}</p>
-              ) : null}
-            </Tabs.Content>
+              </Button>
+              {createMutation.error ? <p className="text-sm text-destructive">{createMutation.error.message}</p> : null}
+            </TabsContent>
 
-            <Tabs.Content value="join" className="space-y-4">
-              <div className="space-y-3">
-                <div>
-                  <div className="text-sm font-medium text-white">Available rooms</div>
-                  <div className="mt-1 text-sm text-zinc-400">Pick a room, then enter your name and access code.</div>
-                </div>
-                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                  {sessionsQuery.isLoading ? (
-                    <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-4 text-sm text-zinc-400">
-                      Loading rooms...
-                    </div>
-                  ) : null}
+            <TabsContent value="join" className="grid gap-4 data-[state=active]:card-transition-in">
+              <div className="grid gap-2">
+                <div className="text-sm text-muted-foreground">Available rooms</div>
+                <div className="grid max-h-56 gap-2 overflow-y-auto">
+                  {sessionsQuery.isLoading ? <div className="text-sm text-muted-foreground">Loading rooms...</div> : null}
                   {sessionsQuery.data?.map((session) => (
-                    <button
+                    <Button
                       key={session.sessionId}
-                      className={`w-full rounded-[1.5rem] border px-4 py-4 text-left transition ${
-                        selectedSessionId === session.sessionId
-                          ? "border-sky-400/60 bg-sky-400/[0.12]"
-                          : "border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.06]"
-                      }`}
+                      variant={selectedSessionId === session.sessionId ? "secondary" : "outline"}
+                      className="h-auto justify-start py-2"
                       onClick={() => setSelectedSessionId(session.sessionId)}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-base font-medium text-white">{session.sessionName}</div>
-                          <div className="mt-1 text-sm text-zinc-400">Owner {session.ownerDisplayName}</div>
-                        </div>
-                        {selectedSessionId === session.sessionId ? (
-                          <span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-sky-100">
-                            Selected
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-400">
-                        <span className="rounded-full border border-white/10 px-2 py-1">
-                          {session.memberCount} member{session.memberCount === 1 ? "" : "s"}
-                        </span>
-                        <span className="rounded-full border border-white/10 px-2 py-1">
-                          {session.trackCount} track{session.trackCount === 1 ? "" : "s"}
-                        </span>
-                      </div>
-                    </button>
+                      <div className="font-medium">{session.sessionName}</div>
+                      <div className="text-xs text-muted-foreground">Owner {session.ownerDisplayName}</div>
+                    </Button>
                   ))}
-                  {sessionsQuery.isLoading || sessionsQuery.data?.length ? null : (
-                    <div className="rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-4 text-sm text-zinc-400">
-                      No rooms are available right now.
-                    </div>
-                  )}
                 </div>
               </div>
-              <FormField
+              <Field
                 label="Your display name"
                 value={joinForm.displayName}
                 placeholder="Listener name"
                 onChange={(event) => setJoinForm((current) => ({ ...current, displayName: event.target.value }))}
               />
-              <FormField
+              <Field
                 label="Access code"
                 value={joinForm.accessCode}
                 placeholder="listen-xxxxxx or ctrl-xxxxxx"
                 onChange={(event) => setJoinForm((current) => ({ ...current, accessCode: event.target.value }))}
               />
-              <button
-                className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-medium text-zinc-950 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-600"
+              <Button
+                className="w-full"
                 disabled={joinMutation.isPending || !selectedSessionId || !joinForm.displayName.trim() || !joinForm.accessCode.trim()}
                 onClick={() =>
                   joinMutation.mutate({
@@ -223,14 +190,12 @@ export function AuthPanel() {
                 }
               >
                 {joinMutation.isPending ? "Joining..." : "Join selected room"}
-              </button>
-              {joinMutation.error ? (
-                <p className="text-sm text-rose-300">{joinMutation.error.message}</p>
-              ) : null}
-            </Tabs.Content>
-          </Tabs.Root>
-        </div>
-      </div>
+              </Button>
+              {joinMutation.error ? <p className="text-sm text-destructive">{joinMutation.error.message}</p> : null}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }

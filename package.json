@@ -9,5 +9,8 @@
     "test": "corepack pnpm -r test",
     "lint": "corepack pnpm -r lint",
     "db:migrate": "corepack pnpm --filter @lossless-player/api db:migrate"
+  },
+  "devDependencies": {
+    "shadcn": "^4.2.0"
   }
 }

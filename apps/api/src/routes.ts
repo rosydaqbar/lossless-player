@@ -10,6 +10,7 @@ import {
   queueMutationSchema,
   updateMemberRoleSchema
 } from "@lossless-player/contracts";
+import { env } from "./config/env.js";
 import { requiresSegmentedLosslessPlayback } from "./lib/playback.js";
 import { AuthService } from "./services/auth-service.js";
 import { AdminService } from "./services/admin-service.js";
@@ -36,6 +37,29 @@ async function requireAccess(request: FastifyRequest, authService: AuthService, 
     throw error;
   }
   return authService.getSessionAccess(sessionId, token);
+}
+
+async function botControlRequest(path: string, options: RequestInit = {}) {
+  const base = env.BOT_CONTROL_URL.replace(/\/$/, "");
+  const headers = {
+    ...(options.headers ?? {}),
+    ...(env.BOT_CONTROL_TOKEN ? { "x-bot-control-token": env.BOT_CONTROL_TOKEN } : {})
+  };
+
+  const response = await fetch(`${base}${path}`, {
+    ...options,
+    headers
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.message ?? "Bot control request failed");
+    // @ts-expect-error custom status code
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  return payload;
 }
 
 function extractAdminToken(request: FastifyRequest) {
@@ -79,6 +103,29 @@ async function ensureQueuedTrackPlaybackPrepared(
     pendingTrackIds.map((trackId) => mediaService.ensureBrowserPlayableAsset(trackId))
   );
   return true;
+}
+
+async function ensureQueuedTrackArtworkPrepared(
+  state: Awaited<ReturnType<SessionService["buildSessionState"]>>,
+  mediaService: MediaService
+) {
+  const pendingTrackIds = state.queue
+    .filter((item) => {
+      const track = item.track;
+      const hasArtwork = track.assets?.some((asset) => asset.kind === "artwork");
+      return !hasArtwork;
+    })
+    .map((item) => item.track.trackId);
+
+  if (pendingTrackIds.length === 0) {
+    return false;
+  }
+
+  const results = await Promise.allSettled(
+    pendingTrackIds.map((trackId) => mediaService.ensureTrackArtworkAsset(trackId))
+  );
+
+  return results.some((result) => result.status === "fulfilled" && result.value === true);
 }
 
 async function requireAdmin(request: FastifyRequest, adminService: AdminService) {
@@ -199,11 +246,70 @@ export async function registerRoutes(
     const params = request.params as { id: string };
     const access = await requireAccess(request, services.authService, params.id);
     let state = await services.sessionService.buildSessionState(params.id, access.memberId);
+    const queuedArtworkBackfill = await ensureQueuedTrackArtworkPrepared(state, services.mediaService);
+    if (queuedArtworkBackfill) {
+      state = await services.sessionService.buildSessionState(params.id, access.memberId);
+    }
     const queuedBackfill = await ensureQueuedTrackPlaybackPrepared(state, services.mediaService);
     if (queuedBackfill) {
       state = await services.sessionService.buildSessionState(params.id, access.memberId);
     }
     return state;
+  });
+
+  app.get("/api/sessions/:id/bots", async (request) => {
+    const params = request.params as { id: string };
+    await requireAccess(request, services.authService, params.id);
+
+    const payload = await botControlRequest("/bots", { method: "GET" });
+    const bots = Array.isArray(payload?.bots) ? payload.bots : [];
+
+    return {
+      bots: bots.map((bot: any) => ({
+        ...bot,
+        connectedToSession: bot.connectedSessionId === params.id
+      }))
+    };
+  });
+
+  app.post("/api/sessions/:id/bots/:botId/connect", async (request) => {
+    const params = request.params as { id: string; botId: string };
+    await requireAccess(request, services.authService, params.id);
+    const accessToken = extractToken(request);
+    if (!accessToken) {
+      const error = new Error("Missing access token");
+      // @ts-expect-error custom status code
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const body = (request.body as { channelId?: string } | undefined) ?? {};
+    return botControlRequest(`/bots/${params.botId}/connect`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: params.id,
+        accessToken,
+        channelId: body.channelId ?? null
+      })
+    });
+  });
+
+  app.post("/api/sessions/:id/bots/:botId/disconnect", async (request) => {
+    const params = request.params as { id: string; botId: string };
+    await requireAccess(request, services.authService, params.id);
+
+    return botControlRequest(`/bots/${params.botId}/disconnect`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: params.id
+      })
+    });
   });
 
   app.delete("/api/sessions/:id", async (request) => {
@@ -259,7 +365,19 @@ export async function registerRoutes(
     const params = request.params as { id: string };
     const access = await requireAccess(request, services.authService, params.id);
     const input = playbackControlSchema.parse(request.body);
-    const event = await services.playbackAuthority.applyControl(params.id, access, input);
+    const bypassToken = String(request.headers["x-lossless-bot-token"] ?? "");
+    const bypassHeader = String(request.headers["x-lossless-bot"] ?? "");
+    const shouldBypassControlRoleCheck = Boolean(env.BOT_CONTROL_BYPASS_TOKEN)
+      ? bypassToken === env.BOT_CONTROL_BYPASS_TOKEN
+      : bypassHeader === "1";
+    const effectiveAccess = shouldBypassControlRoleCheck
+      ? {
+          ...access,
+          role: "controller" as const
+        }
+      : access;
+
+    const event = await services.playbackAuthority.applyControl(params.id, effectiveAccess, input);
     const state = await services.sessionService.buildSessionState(params.id, access.memberId);
     services.hub.emitTransportCommand(params.id, event);
     services.hub.emitSessionState(params.id, state);

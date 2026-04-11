@@ -13,7 +13,10 @@ export class PlaybackAuthority {
 
   async applyControl(sessionId: string, actor: SessionAccessContext, input: PlaybackControlInput) {
     if (!canManagePlayback(actor.role)) {
-      throw new Error("Playback control requires controller access");
+      const error = new Error("Playback control requires controller access");
+      // @ts-expect-error custom status code
+      error.statusCode = 403;
+      throw error;
     }
 
     return this.database.transaction(async (tx: any) => {

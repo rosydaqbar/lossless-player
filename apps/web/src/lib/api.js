@@ -141,6 +141,36 @@ export async function controlPlayback(sessionId, accessToken, input) {
   });
 }
 
+export async function fetchSessionBots(sessionId, accessToken) {
+  return request(`/api/sessions/${sessionId}/bots`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+}
+
+export async function connectSessionBot(sessionId, botId, accessToken) {
+  return request(`/api/sessions/${sessionId}/bots/${botId}/connect`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify({})
+  });
+}
+
+export async function disconnectSessionBot(sessionId, botId, accessToken) {
+  return request(`/api/sessions/${sessionId}/bots/${botId}/disconnect`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify({})
+  });
+}
+
 export async function updateMemberRole(sessionId, memberId, accessToken, input) {
   return request(`/api/sessions/${sessionId}/members/${memberId}/role`, {
     method: "POST",

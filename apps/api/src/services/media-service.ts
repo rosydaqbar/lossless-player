@@ -27,6 +27,34 @@ const TARGET_DECODED_CHUNK_BYTES = 6 * 1024 * 1024;
 const MAX_HIFI_SAMPLE_RATE = 192000;
 const MAX_HIFI_BIT_DEPTH = 24;
 
+function resolveArtworkFileExtension(mimeType: string | null | undefined) {
+  const normalized = (mimeType ?? "").toLowerCase();
+  if (normalized === "image/jpeg" || normalized === "image/jpg") {
+    return ".jpg";
+  }
+  if (normalized === "image/png") {
+    return ".png";
+  }
+  if (normalized === "image/webp") {
+    return ".webp";
+  }
+  if (normalized === "image/gif") {
+    return ".gif";
+  }
+  return ".img";
+}
+
+function pickEmbeddedArtwork(metadata: Awaited<ReturnType<typeof parseFile>>) {
+  const pictures = metadata.common.picture ?? [];
+  if (!pictures.length) {
+    return null;
+  }
+
+  return pictures
+    .filter((picture) => picture?.data?.length && picture?.format)
+    .sort((a, b) => b.data.length - a.data.length)[0] ?? null;
+}
+
 function clampHiFiSampleRate(sampleRate: number | null | undefined) {
   const value = Number(sampleRate ?? 0);
   if (!Number.isFinite(value) || value <= 0) {
@@ -548,6 +576,22 @@ export class MediaService {
     }
 
     const metadata = await parseFile(destination, { duration: true });
+    const artwork = pickEmbeddedArtwork(metadata);
+    const artworkAssetId = artwork ? randomUUID() : null;
+    const artworkPath = artwork && artworkAssetId
+      ? join(
+          env.storageRoot,
+          "artwork",
+          trackId,
+          `${artworkAssetId}${resolveArtworkFileExtension(artwork.format)}`
+        )
+      : null;
+
+    if (artwork && artworkPath) {
+      await mkdir(dirname(artworkPath), { recursive: true });
+      await writeFile(artworkPath, artwork.data);
+    }
+
     const codec = metadata.format.codec ?? null;
     const detectedMime = inferMimeType({
       filename: safeName,
@@ -587,6 +631,22 @@ export class MediaService {
         bitDepth: metadata.format.bitsPerSample ?? null,
         channels: metadata.format.numberOfChannels ?? null
       });
+
+      if (artwork && artworkAssetId && artworkPath) {
+        await tx.insert(trackAssets).values({
+          id: artworkAssetId,
+          trackId,
+          kind: "artwork",
+          status: "complete",
+          storagePath: artworkPath,
+          mimeType: artwork.format,
+          container: null,
+          codec: null,
+          sampleRate: null,
+          bitDepth: null,
+          channels: null
+        });
+      }
 
       const shouldNormalize = needsBrowserPlaybackDerivative({
         extension: extname(safeName),
@@ -642,6 +702,56 @@ export class MediaService {
   async getTrackAsset(assetId: string) {
     const [asset] = await this.database.select().from(trackAssets).where(eq(trackAssets.id, assetId));
     return asset ?? null;
+  }
+
+  async ensureTrackArtworkAsset(trackId: string) {
+    const assets = await this.database.select().from(trackAssets).where(eq(trackAssets.trackId, trackId));
+    const existingArtwork = assets.find((asset: any) => asset.kind === "artwork");
+    if (existingArtwork) {
+      return false;
+    }
+
+    const sourceAsset = assets.find((asset: any) => asset.kind === "original" && asset.status === "complete");
+    if (!sourceAsset) {
+      return false;
+    }
+
+    try {
+      const metadata = await parseFile(sourceAsset.storagePath, { duration: false });
+      const artwork = pickEmbeddedArtwork(metadata);
+      if (!artwork) {
+        return false;
+      }
+
+      const artworkAssetId = randomUUID();
+      const artworkPath = join(
+        env.storageRoot,
+        "artwork",
+        trackId,
+        `${artworkAssetId}${resolveArtworkFileExtension(artwork.format)}`
+      );
+
+      await mkdir(dirname(artworkPath), { recursive: true });
+      await writeFile(artworkPath, artwork.data);
+
+      await this.database.insert(trackAssets).values({
+        id: artworkAssetId,
+        trackId,
+        kind: "artwork",
+        status: "complete",
+        storagePath: artworkPath,
+        mimeType: artwork.format,
+        container: null,
+        codec: null,
+        sampleRate: null,
+        bitDepth: null,
+        channels: null
+      });
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async getTrackAssets(trackId: string) {

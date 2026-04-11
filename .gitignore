@@ -8,4 +8,6 @@ pnpm-lock.yaml
 storage/
 apps/api/drizzle/
 apps/web/.vite/
+apps/music-bot/data/
+apps/music-bot/apps/music-bot/data/
 *.log

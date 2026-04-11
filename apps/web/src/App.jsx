@@ -7,14 +7,16 @@ export default function App() {
   const sessionId = useSessionStore((state) => state.sessionId);
   const accessToken = useSessionStore((state) => state.accessToken);
   const isAdminRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
+  let view = <SessionRoom />;
+  let viewKey = "session";
 
   if (isAdminRoute) {
-    return <AdminDashboard />;
+    view = <AdminDashboard />;
+    viewKey = "admin";
+  } else if (!sessionId || !accessToken) {
+    view = <AuthPanel />;
+    viewKey = "auth";
   }
 
-  if (!sessionId || !accessToken) {
-    return <AuthPanel />;
-  }
-
-  return <SessionRoom />;
+  return <div key={viewKey} className="page-transition-in">{view}</div>;
 }

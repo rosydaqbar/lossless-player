@@ -53,7 +53,10 @@ export class AuthService {
 
     const match = tokenRecord.find((record: any) => record.sessionId === sessionId);
     if (!match) {
-      throw new Error("Unauthorized");
+      const error = new Error("Unauthorized");
+      // @ts-expect-error custom status code for Fastify
+      error.statusCode = 401;
+      throw error;
     }
 
     await this.database

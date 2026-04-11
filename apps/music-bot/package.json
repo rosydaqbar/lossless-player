@@ -1,0 +1,16 @@
+{
+  "name": "@lossless-player/music-bot",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js",
+    "build": "echo \"No build step for music bot\"",
+    "lint": "echo \"No lint step for music bot\"",
+    "test": "echo \"No music bot tests yet\""
+  },
+  "dependencies": {
+    "discord.js": "^14.20.0",
+    "dotenv": "^16.4.7"
+  }
+}
